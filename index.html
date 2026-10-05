@@ -46,6 +46,12 @@
     const radar = document.getElementById("radar");
 
     /*
+     * <script type="module"> is deferred, so it has not run yet when this
+     * inline script executes. setConfig() only exists once the card's
+     * custom element has been defined, so wait for it first.
+     */
+    customElements.whenDefined("bom-radar-card").then(() => {
+    /*
      * Minimal Home Assistant object required by the card.
      * This is NOT Home Assistant. It only supplies the location/unit
      * information the card normally receives from Home Assistant.
@@ -116,6 +122,8 @@
         location.reload();
       }
     }, 24 * 60 * 60 * 1000);
+
+    }); /* end customElements.whenDefined */
   </script>
 </body>
 </html>
