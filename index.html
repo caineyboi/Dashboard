@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Gladstone BOM Radar</title>
+
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    body {
+      display: block;
+      font-family: Arial, sans-serif;
+    }
+
+    bom-radar-card {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Make the Home Assistant card fill the TV. */
+    bom-radar-card::part(card) {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+
+  <!-- Exact v1.14.0 release of AshtonAU/bom-radar-card.
+       The card is MIT licensed and bundles Leaflet 1.9.4. -->
+  <script type="module"
+    src="https://cdn.jsdelivr.net/gh/AshtonAU/bom-radar-card@v1.14.0/dist/bom-radar-card.js"></script>
+</head>
+
+<body>
+  <bom-radar-card id="radar"></bom-radar-card>
+
+  <script>
+    const radar = document.getElementById("radar");
+
+    /*
+     * Minimal Home Assistant object required by the card.
+     * This is NOT Home Assistant. It only supplies the location/unit
+     * information the card normally receives from Home Assistant.
+     */
+    radar.hass = {
+      config: {
+        latitude: -23.8427,
+        longitude: 151.2488,
+        unit_system: {
+          length: "km",
+          temperature: "°C",
+          mass: "g",
+          volume: "L"
+        },
+        time_zone: "Australia/Brisbane"
+      }
+    };
+
+    radar.setConfig({
+      type: "custom:bom-radar-card",
+
+      layer: "rain_rate",
+
+      center_latitude: -23.8427,
+      center_longitude: 151.2488,
+      zoom_level: 7,
+
+      map_height: 1000,
+
+      basemap_provider: "bom",
+      basemap_style: "auto",
+
+      frame_count: 9,
+      frame_delay: 500,
+      restart_delay: 1500,
+
+      radar_opacity: 0.75,
+
+      show_marker: true,
+      show_zoom: true,
+      show_recenter: true,
+      show_layer_switcher: true,
+      show_playback: true,
+      show_legend: true,
+      show_legend_button: true,
+      show_attribution: true,
+
+      /* TV-friendly: hide controls after inactivity. */
+      auto_hide_controls: true,
+
+      /* Only need rain layers for this first version. */
+      enabled_layers: [
+        "rain_rate",
+        "reflectivity",
+        "accumulation_1hr",
+        "accumulation_24hr"
+      ]
+    });
+
+    /*
+     * Keep the display alive if the browser sits open for days.
+     * The card itself refreshes BOM data every five minutes.
+     * This only reloads the page if something catastrophic stops
+     * the frontend after 24 hours.
+     */
+    setInterval(() => {
+      if (!document.body.contains(radar)) {
+        location.reload();
+      }
+    }, 24 * 60 * 60 * 1000);
+  </script>
+</body>
+</html>
