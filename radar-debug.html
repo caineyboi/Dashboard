@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Radar Debug</title>
+<style>
+  body { background:#111; color:#eee; font:14px/1.5 monospace; margin:0; padding:12px; }
+  h2 { font-size:15px; margin:14px 0 6px; color:#8cf; }
+  .row { padding:3px 0; border-bottom:1px solid #333; word-break:break-all; }
+  .pass { color:#4f4; } .fail { color:#f66; } .warn { color:#fc6; }
+  .label { display:inline-block; width:210px; color:#999; }
+  img.test { max-width:130px; border:1px solid #444; margin:4px 4px 0 0; vertical-align:top; }
+  #err { background:#300; color:#fbb; padding:8px; white-space:pre-wrap; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<h2>1. Environment</h2>
+<div class="row"><span class="label">User-Agent</span><span id="ua"></span></div>
+<div class="row"><span class="label">Custom Elements</span><span id="ce"></span></div>
+<div class="row"><span class="label">Shadow DOM</span><span id="sd"></span></div>
+<div class="row"><span class="label">ES modules</span><span id="esm"></span></div>
+<div class="row"><span class="label">Promise</span><span id="pr"></span></div>
+<div class="row"><span class="label">Screen</span><span id="scr"></span></div>
+
+<h2>2. BOM tile load (this is what the card depends on)</h2>
+<div class="row"><span class="label">Basemap tile via img</span><span id="b1"></span></div>
+<div id="b1img"></div>
+<div class="row"><span class="label">Radar WMTS tile via img</span><span id="b2"></span></div>
+<div id="b2img"></div>
+
+<h2>3. Same URLs via fetch (shows the block message if present)</h2>
+<div class="row"><span class="label">fetch basemap</span><span id="f1"></span></div>
+<div class="row"><span class="label">fetch radar WMTS</span><span id="f2"></span></div>
+
+<h2>4. bom-radar-card initialisation</h2>
+<div class="row"><span class="label">Bundle loaded</span><span id="c1"></span></div>
+<div class="row"><span class="label">Element defined</span><span id="c2"></span></div>
+<div class="row"><span class="label">setConfig</span><span id="c3"></span></div>
+<div class="row"><span class="label">Shadow tiles rendered</span><span id="c4"></span></div>
+<div id="err" style="display:none"></div>
+
+<script type="module">
+const set = (id, txt, cls) => {
+  document.getElementById(id).innerHTML = txt;
+  document.getElementById(id).className = cls || '';
+};
+const BASEMAP = "https://api.bom.gov.au/apikey/v1/mapping/basemaps/basemap_dark/MapServer/tile/7/72/117?blankTile=false";
+const WMTS = "https://api.bom.gov.au/apikey/v1/mapping/timeseries/wmts"
+  + "?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+  + "&LAYER=atm_surf_air_precip_rate_1hr_total_mm_h&STYLE=default&FORMAT=image/png"
+  + "&TILEMATRIXSET=GoogleMapsCompatible_BoM&TILEMATRIX=7&TILEROW=6&TILECOL=16"
+  + "&time=" + new Date().toISOString().slice(0, 19) + "Z";
+
+/* 1. Environment */
+set("ua", navigator.userAgent);
+set("ce", typeof customElements !== "undefined" ? "yes" : "NO", typeof customElements !== "undefined" ? "pass" : "fail");
+set("sd", (document.body.attachShadow ? "yes" : "NO"), document.body.attachShadow ? "pass" : "fail");
+set("pr", typeof Promise !== "undefined" ? "yes" : "NO", typeof Promise !== "undefined" ? "pass" : "fail");
+set("scr", screen.width + "x" + screen.height + " dpr=" + window.devicePixelRatio);
+
+/* ES modules: this script is itself a module, so reaching here proves support. */
+set("esm", "yes (this script ran)", "pass");
+
+/* 2. Tile loads via <img>, which is exactly how the card fetches data. */
+function tileTest(url, id, imgHost) {
+  const img = new Image();
+  const started = Date.now();
+  const timer = setTimeout(() => {
+    set(id, "TIMEOUT after 8s", "fail");
+  }, 8000);
+  img.onload = () => {
+    clearTimeout(timer);
+    const dims = img.naturalWidth + "x" + img.naturalHeight;
+    set(id, "OK " + dims + " in " + (Date.now() - started) + "ms",
+        dims === "256x256" ? "pass" : "warn");
+    img.className = "test";
+    document.getElementById(imgHost).appendChild(img);
+  };
+  img.onerror = () => {
+    clearTimeout(timer);
+    set(id, "LOAD ERROR (blocked, 404, or no route)", "fail");
+  };
+  img.src = url;
+}
+tileTest(BASEMAP, "b1", "b1img");
+tileTest(WMTS,   "b2", "b2img");
+
+/* 3. fetch versions, so the block message becomes readable if it exists. */
+async function fetchTest(url, id) {
+  try {
+    const r = await fetch(url);
+    if (r.ok) {
+      set(id, "OK " + r.status + " " + r.headers.get("content-type"), "pass");
+    } else {
+      const body = await r.text();
+      const sniff = /automated access|does not support web scraping/i.test(body);
+      set(id, r.status + (sniff ? " BOM ANTI-BOT BLOCK" : " error"), "fail");
+      if (sniff) {
+        document.getElementById(id).insertAdjacentHTML("afterend",
+          '<div class="row warn">BOM rejected this client. The radar card ' +
+          'cannot work from a browser that trips this filter.</div>');
+      }
+    }
+  } catch (e) {
+    set(id, "THREW " + e.name + ": " + e.message, "fail");
+  }
+}
+fetchTest(BASEMAP, "f1");
+fetchTest(WMTS,   "f2");
+
+/* 4. The card itself, with the exception printed instead of swallowed. */
+set("c1", "loading...", "warn");
+const show = (e) => {
+  const box = document.getElementById("err");
+  box.style.display = "block";
+  box.textContent += (e && e.stack ? e.stack : String(e)) + "\n\n";
+};
+try {
+  await import("https://cdn.jsdelivr.net/gh/AshtonAU/bom-radar-card@v1.14.0/dist/bom-radar-card.js");
+  set("c1", "OK", "pass");
+} catch (e) {
+  set("c1", "THREW " + e.name + ": " + e.message, "fail");
+  show(e);
+  throw e;
+}
+
+try {
+  await customElements.whenDefined("bom-radar-card");
+  set("c2", "OK", "pass");
+} catch (e) {
+  set("c2", "no", "fail"); show(e);
+}
+
+const card = document.createElement("bom-radar-card");
+card.style.cssText = "display:block;width:100%;height:340px;background:#222";
+document.body.appendChild(card);
+
+card.hass = { config: {
+  latitude: -23.8427, longitude: 151.2488,
+  unit_system: { length: "km", temperature: "\u00B0C", mass: "g", volume: "L" },
+  time_zone: "Australia/Brisbane"
+}};
+
+try {
+  card.setConfig({
+    type: "custom:bom-radar-card", layer: "rain_rate",
+    center_latitude: -23.8427, center_longitude: 151.2488, zoom_level: 7,
+    basemap_provider: "bom", basemap_style: "auto",
+    frame_count: 9, frame_delay: 500, restart_delay: 1500, radar_opacity: 0.75,
+    show_marker: true, show_zoom: true, show_recenter: true,
+    show_layer_switcher: true, show_playback: true, show_legend: true,
+    show_legend_button: true, show_attribution: true, auto_hide_controls: true,
+    enabled_layers: ["rain_rate","reflectivity","accumulation_1hr","accumulation_24hr"]
+  });
+  set("c3", "OK", "pass");
+} catch (e) {
+  set("c3", "THREW " + e.name + ": " + e.message, "fail");
+  show(e);
+}
+
+/* Watch what the card logs, since its own catch hides the cause. */
+const realError = console.error;
+console.error = function (...args) {
+  show(args.map(a => (a && a.stack) ? a.stack : String(a)).join(" "));
+  return realError.apply(this, args);
+};
+
+/* Count tiles once the card has had time to init. */
+setTimeout(() => {
+  const sr = card.shadowRoot;
+  const n = sr ? sr.querySelectorAll("img").length : 0;
+  const loading = sr && sr.getElementById ? sr.getElementById("loading") : null;
+  const msg = loading ? (loading.textContent || "").trim().slice(0, 120) : "(no loading node)";
+  set("c4", n + " imgs | loading: " + msg, n > 0 ? "pass" : "fail");
+}, 9000);
+
+setTimeout(() => { set("c4", document.getElementById("c4").innerHTML + " [20s]", ""); }, 20000);
+</script>
+</body>
+</html>
